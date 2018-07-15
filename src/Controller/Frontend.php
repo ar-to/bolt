@@ -13,6 +13,7 @@ use Silex\ControllerCollection;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
 /**
  * Standard Frontend actions.
@@ -150,7 +151,7 @@ class Frontend extends ConfigurableBase
         // First, try to get it by slug.
         $content = $this->getContent($contenttype['slug'], ['slug' => $slug, 'returnsingle' => true, 'log_not_found' => !is_numeric($slug)]);
 
-        if (is_numeric($slug) && (!$content || count($content) === 0)) {
+        if (is_numeric($slug) && !$content) {
             // And otherwise try getting it by ID
             $content = $this->getContent($contenttype['slug'], ['id' => $slug, 'returnsingle' => true]);
         }
@@ -189,6 +190,10 @@ class Frontend extends ConfigurableBase
      */
     public function preview(Request $request, $contenttypeslug)
     {
+        if (!$request->isMethod('POST')) {
+            throw new MethodNotAllowedHttpException(['POST'], 'This route only accepts POST requests.');
+        }
+
         $contenttype = $this->getContentType($contenttypeslug);
 
         $id = $request->request->get('id');
@@ -391,22 +396,27 @@ class Frontend extends ConfigurableBase
         }
 
         $result = $this->storage()->searchContent($q, $contenttypes, $filters, $limit, $offset);
+        $arr = $result ?: [
+            'no_of_results' => 0,
+            'results'       => [],
+            'query'         => ['sanitized_q' => null],
+        ];
 
         /** @var \Bolt\Pager\PagerManager $manager */
         $manager = $this->app['pager'];
         $manager
             ->createPager($context)
-            ->setCount($result['no_of_results'])
-            ->setTotalpages(ceil($result['no_of_results'] / $pageSize))
+            ->setCount($arr['no_of_results'])
+            ->setTotalpages(ceil($arr['no_of_results'] / $pageSize))
             ->setCurrent($page)
             ->setShowingFrom($offset + 1)
-            ->setShowingTo($offset + count($result['results']));
+            ->setShowingTo($offset + count($arr['results']));
 
         $manager->setLink($this->generateUrl('search', ['q' => $q]) . '&page_search=');
 
         $globals = [
-            'records'      => $result['results'],
-            $context       => $result['query']['sanitized_q'],
+            'records'      => $arr['results'],
+            $context       => $arr['query']['sanitized_q'],
             'searchresult' => $result,
         ];
 
